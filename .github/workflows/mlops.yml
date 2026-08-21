@@ -31,8 +31,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run unit tests
-        # TODO 1: Viet lenh de chay pytest tren thu muc tests/ voi co -v
-        run: # <dien lenh o day>
+        run: pytest tests/ -v
 
 
   # ---------------------------------------------------------------------------
@@ -44,6 +43,9 @@ jobs:
     name: Train
     needs: test
     runs-on: ubuntu-latest
+    env:
+      CLOUD_BUCKET: ${{ secrets.CLOUD_BUCKET }}
+      CLOUD_CREDENTIALS: ${{ secrets.CLOUD_CREDENTIALS }}
     outputs:
       accuracy: ${{ steps.read_metrics.outputs.accuracy }}
 
@@ -58,42 +60,49 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Authenticate to Cloud Storage
-        # TODO 2: Ghi noi dung credentials ra file tam va set bien moi truong xac thuc.
-        # GCP:   echo '${{ secrets.CLOUD_CREDENTIALS }}' > /tmp/sa-key.json
-        #        echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json" >> $GITHUB_ENV
-        # AWS:   echo "AWS_ACCESS_KEY_ID=..." >> $GITHUB_ENV  (lay tu secrets)
-        #        echo "AWS_SECRET_ACCESS_KEY=..." >> $GITHUB_ENV
-        # Azure: echo "AZURE_STORAGE_CONNECTION_STRING=..." >> $GITHUB_ENV
+        if: env.CLOUD_BUCKET != '' && env.CLOUD_CREDENTIALS != ''
         run: |
-          # <dien code o day>
+          printf '%s' "$CLOUD_CREDENTIALS" > /tmp/sa-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json" >> "$GITHUB_ENV"
 
-      - name: Pull data with DVC
-        # TODO 3: Pull cac file du lieu can thiet tu cloud storage bang lenh dvc pull.
-        #         Chi pull train_phase1.csv va eval.csv (khong can train_phase2.csv).
-        run: # <dien lenh o day>
+      - name: Pull data from GCS with DVC
+        if: env.CLOUD_BUCKET != '' && env.CLOUD_CREDENTIALS != ''
+        run: |
+          dvc remote add --force --default myremote "gs://$CLOUD_BUCKET/dvc"
+          dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc
+
+      - name: Pull data from bundled DVC remote (offline fallback)
+        if: env.CLOUD_BUCKET == '' || env.CLOUD_CREDENTIALS == ''
+        run: dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc
 
       - name: Train model
         run: python src/train.py
 
       - name: Read metrics
         id: read_metrics
-        # TODO 4: Doc gia tri "accuracy" tu outputs/metrics.json bang Python inline.
-        #         Set ket qua thanh output "accuracy" de job deploy co the doc.
-        #
-        # Goi y:
-        #   ACC=$(python -c "import json; d=json.load(open('outputs/metrics.json')); print(d['accuracy'])")
-        #   echo "accuracy=$ACC" >> $GITHUB_OUTPUT
         run: |
-          # <dien code o day>
+          ACC=$(python -c "import json; print(json.load(open('outputs/metrics.json'))['accuracy'])")
+          echo "accuracy=$ACC" >> "$GITHUB_OUTPUT"
 
       - name: Upload model to Cloud Storage
-        # TODO 5: Su dung cloud SDK de upload models/model.pkl len
-        #         <bucket>/models/latest/model.pkl.
-        #         Ten bucket lay tu secret CLOUD_BUCKET.
+        if: env.CLOUD_BUCKET != '' && env.CLOUD_CREDENTIALS != ''
         run: |
           python - <<'EOF'
-          # <dien code Python o day>
+          import os
+          from google.cloud import storage
+
+          client = storage.Client()
+          bucket = client.bucket(os.environ["CLOUD_BUCKET"])
+          blob = bucket.blob("models/latest/model.pkl")
+          blob.upload_from_filename("models/model.pkl")
+          print(f"Uploaded model to gs://{bucket.name}/{blob.name}")
           EOF
+
+      - name: Save model as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model
+          path: models/model.pkl
 
       - name: Save metrics as artifact
         uses: actions/upload-artifact@v4
@@ -115,18 +124,16 @@ jobs:
     steps:
 
       - name: Check eval gate
-        # TODO 6: Doc accuracy tu output cua job train.
-        #         Neu accuracy < 0.70, ket thuc voi loi ro rang.
-        #         Neu dat nguong, in thong bao va tiep tuc.
-        #
-        # Goi y:
-        #   acc = float("${{ needs.train.outputs.accuracy }}")
-        #   if acc < 0.70:
-        #       raise SystemExit(f"FAILED: accuracy {acc:.4f} < 0.70. Huy deploy.")
-        #   print("PASSED: dang trien khai model.")
+        env:
+          MODEL_ACCURACY: ${{ needs.train.outputs.accuracy }}
         run: |
           python - <<'EOF'
-          # <dien code Python o day>
+          import os
+
+          acc = float(os.environ["MODEL_ACCURACY"])
+          if acc < 0.70:
+              raise SystemExit(f"FAILED: accuracy {acc:.4f} < 0.70. Huy deploy.")
+          print(f"PASSED: accuracy {acc:.4f} >= 0.70. Dang trien khai model.")
           EOF
 
 
@@ -139,21 +146,74 @@ jobs:
     name: Deploy
     needs: eval
     runs-on: ubuntu-latest
+    env:
+      VM_HOST: ${{ secrets.VM_HOST }}
+      VM_USER: ${{ secrets.VM_USER }}
+      VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
     steps:
 
       - name: SSH deploy to VM
+        if: env.VM_HOST != '' && env.VM_USER != '' && env.VM_SSH_KEY != ''
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
+          host: ${{ env.VM_HOST }}
+          username: ${{ env.VM_USER }}
+          key: ${{ env.VM_SSH_KEY }}
           script: |
-            # TODO 7: Restart service mlops-serve tren VM.
-            # TODO 8: Cho server san sang roi goi curl /health de xac nhan.
-            #         Neu health check that bai sau nhieu lan thu, thoat voi exit 1.
-            #
-            # Goi y:
-            #   sudo systemctl restart mlops-serve
-            #   sleep 5
-            #   curl -sf http://localhost:8000/health && echo "Health check passed." || exit 1
-            # <dien lenh bash o day>
+            sudo systemctl restart mlops-serve
+            for attempt in 1 2 3 4 5 6; do
+              if curl -sf http://localhost:8000/health; then
+                echo "Health check passed."
+                exit 0
+              fi
+              echo "Waiting for service (attempt $attempt/6)..."
+              sleep 5
+            done
+            echo "Health check failed."
+            sudo journalctl -u mlops-serve -n 50 --no-pager
+            exit 1
+
+      - name: Checkout for local deployment fallback
+        if: env.VM_HOST == '' || env.VM_USER == '' || env.VM_SSH_KEY == ''
+        uses: actions/checkout@v4
+
+      - name: Set up Python for local deployment fallback
+        if: env.VM_HOST == '' || env.VM_USER == '' || env.VM_SSH_KEY == ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install serving dependencies
+        if: env.VM_HOST == '' || env.VM_USER == '' || env.VM_SSH_KEY == ''
+        run: pip install -r requirements.txt
+
+      - name: Download trained model
+        if: env.VM_HOST == '' || env.VM_USER == '' || env.VM_SSH_KEY == ''
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: models
+
+      - name: Deploy and smoke-test API on runner (offline fallback)
+        if: env.VM_HOST == '' || env.VM_USER == '' || env.VM_SSH_KEY == ''
+        env:
+          MODEL_PATH: ${{ github.workspace }}/models/model.pkl
+        run: |
+          uvicorn src.serve:app --host 127.0.0.1 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+
+          for attempt in 1 2 3 4 5 6; do
+            if curl -sf http://127.0.0.1:8000/health; then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              cat /tmp/uvicorn.log
+              exit 1
+            fi
+            sleep 5
+          done
+
+          curl -sf -X POST http://127.0.0.1:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"features":[7.4,0.70,0.00,1.9,0.076,11.0,34.0,0.9978,3.51,0.56,9.4,0]}'

@@ -6,9 +6,11 @@ import os
 
 app = FastAPI()
 
-GCS_BUCKET = os.environ["GCS_BUCKET"]
+GCS_BUCKET = os.getenv("GCS_BUCKET")
 GCS_MODEL_KEY = "models/latest/model.pkl"
-MODEL_PATH = os.path.expanduser("~/models/model.pkl")
+MODEL_PATH = os.path.abspath(
+    os.getenv("MODEL_PATH", os.path.expanduser("~/models/model.pkl"))
+)
 
 
 def download_model():
@@ -18,20 +20,21 @@ def download_model():
     Ham nay duoc goi mot lan khi module duoc import. Su dung
     GOOGLE_APPLICATION_CREDENTIALS de xac thuc (duoc dat trong systemd service).
     """
-    # TODO 1: Tao storage.Client()
-    # client = storage.Client()
+    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
 
-    # TODO 2: Lay bucket va blob tuong ung
-    # bucket = client.bucket(GCS_BUCKET)
-    # blob   = bucket.blob(GCS_MODEL_KEY)
+    if GCS_BUCKET:
+        client = storage.Client()
+        bucket = client.bucket(GCS_BUCKET)
+        blob = bucket.blob(GCS_MODEL_KEY)
+        blob.download_to_filename(MODEL_PATH)
+        print("Model da duoc tai xuong tu GCS.")
+        return
 
-    # TODO 3: Tai file model xuong may
-    # blob.download_to_filename(MODEL_PATH)
-
-    # TODO 4: In thong bao thanh cong
-    # print("Model da duoc tai xuong tu GCS.")
-
-    pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
+    if not os.path.exists(MODEL_PATH):
+        raise RuntimeError(
+            "MODEL_PATH does not exist and GCS_BUCKET was not configured"
+        )
+    print(f"Su dung model cuc bo tai {MODEL_PATH}.")
 
 
 download_model()
@@ -50,8 +53,7 @@ def health():
 
     Tra ve: {"status": "ok"}
     """
-    # TODO 5: Tra ve dict {"status": "ok"}
-    pass  # xoa dong nay sau khi hoan thanh
+    return {"status": "ok"}
 
 
 @app.post("/predict")
@@ -67,17 +69,18 @@ def predict(req: PredictRequest):
         chlorides, free_sulfur_dioxide, total_sulfur_dioxide, density,
         pH, sulphates, alcohol, wine_type
     """
-    # TODO 6: Kiem tra so luong dac trung.
-    # Neu len(req.features) != 12, raise HTTPException(status_code=400, ...)
+    if len(req.features) != 12:
+        raise HTTPException(
+            status_code=400,
+            detail="Expected 12 features (wine quality)",
+        )
 
-    # TODO 7: Goi model.predict([req.features]) de lay ket qua du doan.
-    # pred = model.predict(...)
+    pred = int(model.predict([req.features])[0])
+    labels = {0: "thap", 1: "trung_binh", 2: "cao"}
+    if pred not in labels:
+        raise HTTPException(status_code=500, detail="Model returned an unknown class")
 
-    # TODO 8: Tra ve dict chua "prediction" (int) va "label" (string).
-    # Nhan tuong ung: 0 -> "thap", 1 -> "trung_binh", 2 -> "cao"
-    # return {"prediction": ..., "label": ...}
-
-    pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
+    return {"prediction": pred, "label": labels[pred]}
 
 
 if __name__ == "__main__":
