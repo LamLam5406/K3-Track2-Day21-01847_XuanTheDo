@@ -24,6 +24,7 @@ Commit dữ liệu Bước 3 bổ sung thêm một mẫu incremental, nâng tậ
 
 - Báo cáo hiệu suất tự động: `outputs/report.txt` chứa confusion matrix và precision/recall/support cho từng lớp; file được upload cùng artifact `metrics`.
 - Cảnh báo lệch dữ liệu: phân phối ba nhãn được ghi vào `metrics.json` và MLflow; lớp dưới 10% sẽ tạo cảnh báo rõ ràng trong log.
+- [Actions run xác minh bonus](https://github.com/LamLam5406/K3-Track2-Day21/actions/runs/32452501205) hoàn tất bốn job `success`; artifact `metrics` chứa cả JSON và báo cáo.
 
 ## Trạng thái xác minh
 

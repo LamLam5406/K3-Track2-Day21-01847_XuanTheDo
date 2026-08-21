@@ -52,3 +52,12 @@ curl -X POST http://127.0.0.1:8000/predict \
 ## 4. Giới hạn cloud
 
 Tài khoản cloud chưa được phê duyệt, vì vậy DVC bundled cache và deploy trên GitHub runner được dùng làm phương án thay thế. Repo không tuyên bố đây là GCS hoặc Cloud VM thật. Khi có các secret `CLOUD_CREDENTIALS`, `CLOUD_BUCKET`, `VM_HOST`, `VM_USER`, `VM_SSH_KEY`, workflow tự động chuyển sang nhánh GCS/VM.
+
+## 5. Bonus được xác minh trên CI
+
+[Actions run bonus](https://github.com/LamLam5406/K3-Track2-Day21/actions/runs/32452501205) có đủ bốn job `success`.
+
+- `outputs/report.txt`: confusion matrix và precision/recall/support từng lớp.
+- `outputs/metrics.json`: accuracy, F1 và phân phối nhãn `0`, `1`, `2`.
+- Artifact `metrics` có kích thước 548 bytes, tăng từ 189 bytes của run trước khi bổ sung báo cáo.
+- Artifact `trained-model` có kích thước khoảng 10,4 MB.
