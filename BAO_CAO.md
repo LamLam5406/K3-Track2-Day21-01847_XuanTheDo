@@ -23,6 +23,9 @@ Sau khi bổ sung `train_phase2.csv`, tập huấn luyện có 5.996 mẫu. Cấ
 - Unit test huấn luyện và API: 6/6 pass.
 - Workflow YAML hợp lệ, gồm đủ bốn job nối tiếp: Unit Test → Train → Eval → Deploy.
 - Model cuối vượt ngưỡng chất lượng: 0.7560 ≥ 0.70.
+- Repo công khai: <https://github.com/LamLam5406/K3-Track2-Day21>.
+- GitHub Actions run thành công: <https://github.com/LamLam5406/K3-Track2-Day21/actions/runs/32450624925>.
+- Kết quả CI: Unit Test, Train, Eval và Deploy đều `success`; hai artifact `metrics` và `trained-model` đã được tạo.
 
 ## Phương án khi chưa được cấp tài khoản cloud
 
