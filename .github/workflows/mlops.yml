@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/mlops.yml'
       - 'data/**.dvc'
       - 'src/**.py'
       - 'params.yaml'
