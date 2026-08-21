@@ -73,7 +73,9 @@ jobs:
 
       - name: Pull data from bundled DVC remote (offline fallback)
         if: env.CLOUD_BUCKET == '' || env.CLOUD_CREDENTIALS == ''
-        run: dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc
+        run: |
+          dvc remote modify localremote url "$GITHUB_WORKSPACE/.dvc-storage"
+          dvc pull --remote localremote data/train_phase1.csv.dvc data/eval.csv.dvc
 
       - name: Train model
         run: python src/train.py
