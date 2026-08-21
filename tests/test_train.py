@@ -64,6 +64,14 @@ def test_metrics_file_created(tmp_path):
         metrics = json.load(f)
     assert "accuracy" in metrics
     assert "f1_score" in metrics
+    assert set(metrics["label_distribution"]) == {"0", "1", "2"}
+    assert abs(sum(metrics["label_distribution"].values()) - 1.0) < 1e-9
+
+    assert os.path.exists("outputs/report.txt")
+    with open("outputs/report.txt", encoding="utf-8") as f:
+        report = f.read()
+    assert "CONFUSION MATRIX" in report
+    assert "precision recall support" in report
 
 
 def test_model_file_created(tmp_path):
